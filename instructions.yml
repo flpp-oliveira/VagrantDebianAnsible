@@ -1,0 +1,65 @@
+---
+
+- hosts: all
+  become: true
+  vars:
+    postgresql_version: "13"
+    postgresql_bin_path: "/usr/lib/postgresql/{{ postgresql_version }}/bin"
+    postgresql_data_dir: "/var/lib/postgresql/{{ postgresql_version }}/main"
+    ansible_ssh_pipelining: true
+    db_user: admin
+    db_password: Passw0rd
+    db_name: testdb
+  
+  tasks:
+    - name: Update apt repo and cache on all Debian
+      apt:
+        update_cache: yes
+        force_apt_get: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages on server
+      apt:
+        upgrade: dist
+        force_apt_get: yes
+    
+    - name: Install required packages
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - libpq-dev
+          - wget
+          - python3-psycopg2
+        state: present
+
+    - name: Check if PostgreSQL is initialized
+      ansible.builtin.stat:
+        path: "{{ postgresql_data_dir }}/pg_hba.conf"
+      register: postgres_data
+
+    - name: Start and enable service
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: "Create app database"
+      postgresql_db:
+        state: present
+        name: "{{ db_name }}"
+      become: yes
+      become_user: postgres
+
+    - name: "Create db user"
+      postgresql_user:
+        state: present
+        name: "{{ db_user }}"
+        password: "{{ db_password }}"
+      become: yes
+      become_user: postgres
+
+    - name: "Add some dummy data to our database"
+      become: true
+      become_user: postgres
+      shell: psql {{ db_name }} < /tmp/dump.sql
